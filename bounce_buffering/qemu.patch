@@ -1,0 +1,45 @@
+diff --git a/hw/vfio/listener.c b/hw/vfio/listener.c
+index 2d7d3a46457..8e14da7c8a7 100644
+--- a/hw/vfio/listener.c
++++ b/hw/vfio/listener.c
+@@ -497,6 +497,8 @@ void vfio_container_region_add(VFIOContainer *bcontainer,
+     int ret;
+     Error *err = NULL;
+ 
++    const hwaddr swiotlb_start = 0x3ffdd000, swiotlb_end = 0xbffdd000;
++
+     if (!vfio_listener_valid_section(section, "region_add")) {
+         return;
+     }
+@@ -587,6 +589,13 @@ void vfio_container_region_add(VFIOContainer *bcontainer,
+         return;
+     }
+ 
++    if (iova <= swiotlb_start && swiotlb_end <= int128_get64(llend)) {
++        fprintf(stderr, "change range\n");
++        iova = swiotlb_start;
++        llend = int128_make64(swiotlb_end);
++        printf("iova: 0x%lx, end: 0x%lx\n", iova, int128_get64(llend));
++    }
++
+     vaddr = memory_region_get_ram_ptr(section->mr) +
+             section->offset_within_region +
+             (iova - section->offset_within_address_space);
+@@ -607,9 +616,17 @@ void vfio_container_region_add(VFIOContainer *bcontainer,
+             return;
+         }
+     }
++    fprintf(stderr, "iova: 0x%lx, size: 0x%lx, end: 0x%lx\n", iova, int128_get64(llsize), end);
++    if ((iova > swiotlb_start || swiotlb_end > int128_get64(llend))) {
++        fprintf(stderr, "skip\n");
++        return;
++    }
++    fprintf(stderr, "not skip\n");
+ 
++    fprintf(stderr, "vfio-dma-start\n");
+     ret = vfio_container_dma_map(bcontainer, iova, int128_get64(llsize),
+                                  vaddr, section->readonly, section->mr);
++    fprintf(stderr, "vfio-dma-end\n");
+     if (ret) {
+         error_setg(&err, "vfio_container_dma_map(%p, 0x%"HWADDR_PRIx", "
+                    "0x%"HWADDR_PRIx", %p) = %d (%s)",

@@ -1,0 +1,12 @@
+diff --git a/kernel-open/nvidia/nv.c b/kernel-open/nvidia/nv.c
+index b771a001..ecef89f3 100644
+--- a/kernel-open/nvidia/nv.c
++++ b/kernel-open/nvidia/nv.c
+@@ -5231,6 +5231,7 @@ NvBool NV_API_CALL nv_requires_dma_remap(
+     nv_state_t *nv
+ )
+ {
++    return NV_TRUE;
+     NvBool dma_remap = NV_FALSE;
+     nv_linux_state_t *nvl = NV_GET_NVL_FROM_NV_STATE(nv);
+     dma_remap = !nv_dma_maps_swiotlb(nvl->dev);

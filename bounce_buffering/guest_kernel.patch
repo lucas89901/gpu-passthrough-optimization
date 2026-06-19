@@ -1,0 +1,41 @@
+diff --git a/include/linux/swiotlb.h b/include/linux/swiotlb.h
+index 3dae0f592..05eba9e80 100644
+--- a/include/linux/swiotlb.h
++++ b/include/linux/swiotlb.h
+@@ -23,13 +23,13 @@ struct scatterlist;
+  * must be a power of 2.  What is the appropriate value ?
+  * The complexity of {map,unmap}_single is linearly dependent on this value.
+  */
+-#define IO_TLB_SEGSIZE	128
++#define IO_TLB_SEGSIZE	131072
+ 
+ /*
+  * log of the size of each IO TLB slab.  The number of slabs is command line
+  * controllable.
+  */
+-#define IO_TLB_SHIFT 11
++#define IO_TLB_SHIFT 12
+ #define IO_TLB_SIZE (1 << IO_TLB_SHIFT)
+ 
+ /* default to 64MB */
+diff --git a/kernel/dma/swiotlb.c b/kernel/dma/swiotlb.c
+index e2445b3af..a6af3c429 100644
+--- a/kernel/dma/swiotlb.c
++++ b/kernel/dma/swiotlb.c
+@@ -328,10 +328,12 @@ static void __init *swiotlb_memblock_alloc(unsigned long nslabs,
+ 	 * allow to pick a location everywhere for hypervisors with guest
+ 	 * memory encryption.
+ 	 */
+-	if (flags & SWIOTLB_ANY)
+-		tlb = memblock_alloc(bytes, PAGE_SIZE);
+-	else
+-		tlb = memblock_alloc_low(bytes, PAGE_SIZE);
++	//if (flags & SWIOTLB_ANY)
++	//	tlb = memblock_alloc(bytes, PAGE_SIZE);
++	//else
++	//	tlb = memblock_alloc_low(bytes, PAGE_SIZE);
++	tlb = memblock_alloc_try_nid(bytes, PAGE_SIZE, 0x3ffdd000,
++		0xbffdd000, NUMA_NO_NODE);
+ 
+ 	if (!tlb) {
+ 		pr_warn("%s: Failed to allocate %zu bytes tlb structure\n",
