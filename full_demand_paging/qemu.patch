@@ -1,0 +1,155 @@
+diff --git a/hw/vfio/listener.c b/hw/vfio/listener.c
+index 2d7d3a46457..3c64e287c0d 100644
+--- a/hw/vfio/listener.c
++++ b/hw/vfio/listener.c
+@@ -491,6 +491,7 @@ void vfio_container_region_add(VFIOContainer *bcontainer,
+                                MemoryRegionSection *section,
+                                bool cpr_remap)
+ {
++    return;
+     hwaddr iova, end;
+     Int128 llend, llsize;
+     void *vaddr;
+diff --git a/include/standard-headers/linux/kvm_para.h b/include/standard-headers/linux/kvm_para.h
+index 015c1663021..4a7572f3eb3 100644
+--- a/include/standard-headers/linux/kvm_para.h
++++ b/include/standard-headers/linux/kvm_para.h
+@@ -30,6 +30,8 @@
+ #define KVM_HC_SEND_IPI		10
+ #define KVM_HC_SCHED_YIELD		11
+ #define KVM_HC_MAP_GPA_RANGE		12
++#define KVM_HC_DMA_MAP 13
++#define KVM_HC_DMA_UNMAP 14
+ 
+ /*
+  * hypercalls use architecture specific
+diff --git a/target/i386/kvm/kvm.c b/target/i386/kvm/kvm.c
+index 60c79811382..21d00c96eb6 100644
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -71,6 +71,8 @@
+ #include "exec/target_page.h"
+ #include "trace.h"
+ 
++#include "hw/vfio/pci.h"
++
+ #include CONFIG_DEVICES
+ 
+ //#define DEBUG_KVM
+@@ -6081,11 +6083,115 @@ static int kvm_handle_hc_map_gpa_range(X86CPU *cpu, struct kvm_run *run)
+     return 0;
+ }
+ 
++static int peripheral_anon_map(Object *child, void *opaque) {
++    if (object_get_class(child) != object_class_by_name("vfio-pci")) {
++        return 0;
++    }
++
++    VFIOPCIDevice *vdev = VFIO_PCI_DEVICE(child);
++    VFIODevice *vbasedev = &vdev->vbasedev;
++
++    struct kvm_run *run = (struct kvm_run *)opaque;
++    hwaddr iova = run->memory_fault.gpa;
++    uint64_t size = run->memory_fault.size;
++
++    MemoryRegionSection section = memory_region_find(get_system_memory(), iova, size);
++    if (!memory_region_is_ram(section.mr) &&
++        !memory_region_is_iommu(section.mr)) {
++        return 0;
++    }
++
++    //fprintf(stderr, "[chengyan] section.mr->name = %s\n", section.mr->name);
++    void* mr_start = memory_region_get_ram_ptr(section.mr);
++    void *vaddr = mr_start + section.offset_within_region +
++                    (iova - section.offset_within_address_space);
++    //assert(iova - section.offset_within_address_space == 0);
++    //fprintf(stderr, "[chengyan] section: %s, 0x%lx, 0x%lx\n",
++    //        section.mr->name, section.offset_within_region,
++    //        section.offset_within_address_space);
++
++    fprintf(stderr, "[chengyan] vfio_container_dma_map, iova = 0x%lx, vaddr = 0x%p, size = %lu\n", iova, vaddr, size);
++    int r = vfio_container_dma_map(vbasedev->bcontainer, iova,
++                                    size, vaddr, 0,
++                                    section.mr);
++    if (r < 0) {
++        perror("[chengyan] vfio_container_dma_map");
++    }
++
++    //uint64_t size_expand = MIN(section.offset_within_region, 1024 * 1024 * 32);
++    //fprintf(stderr, "[chengyan] size_expand = %lu\n", size_expand);
++    ////fprintf(stderr, "[chengyan] vfio_container_dma_map [pre], iova= 0x%lx, vaddr = 0x%p, size = %lu\n",
++    ////    iova - size_expand_pre, vaddr - size_expand_pre, size_expand_pre);
++    ////uint64_t premap_size =
++    //hwaddr iova2 = iova - size_expand;
++    //void* vaddr2 = vaddr - size_expand;
++    //for (; iova2 < iova; iova2 += 4096, vaddr2 += 4096) {
++    //    r = vfio_container_dma_map(vbasedev->bcontainer, iova2,
++    //                                4096, vaddr2, 0,
++    //                                section.mr);
++    //    if (r < 0) {
++    //        //perror("[chengyan]");
++    //        break;
++    //    }
++    //}
++
++    //iova2 = iova + size;
++    //vaddr2 = vaddr + size;
++    //for (; iova2 < ; iova += 4096, vaddr2 += 4096) {
++    //    r = vfio_container_dma_map(vbasedev->bcontainer, iova2,
++    //                               4096, vaddr2, 0,
++    //                               section.mr);
++    //    if (r < 0) {
++    //        break;
++    //        perror("[chengyan]");
++    //    }
++    //}
++    return 0;
++}
++
++static int peripheral_anon_unmap(Object *child, void *opaque) {
++    if (object_get_class(child) != object_class_by_name("vfio-pci")) {
++        return 0;
++    }
++
++    VFIOPCIDevice *vdev = VFIO_PCI_DEVICE(child);
++    VFIODevice *vbasedev = &vdev->vbasedev;
++
++    struct kvm_run *run = (struct kvm_run *)opaque;
++    hwaddr iova = run->memory_fault.gpa;
++    uint64_t size = run->memory_fault.size;
++
++    int r = vfio_container_dma_unmap(vbasedev->bcontainer, iova, size, NULL, false);
++    if (r < 0) {
++        perror("[chengyan] vfio_container_dma_unmap");
++    }
++    return 0;
++}
++
++static int demand_dma(X86CPU *cpu, struct kvm_run *run, bool map) {
++    Object* obj = object_resolve_path_at(OBJECT(current_machine), "peripheral-anon");
++    if (obj) {
++        if (map) {
++            object_child_foreach(obj, peripheral_anon_map, (void *)run);
++        } else {
++            object_child_foreach(obj, peripheral_anon_unmap, (void *)run);
++        }
++    }
++    return 0;
++}
++
+ static int kvm_handle_hypercall(X86CPU *cpu, struct kvm_run *run)
+ {
+     if (run->hypercall.nr == KVM_HC_MAP_GPA_RANGE)
+         return kvm_handle_hc_map_gpa_range(cpu, run);
+-
++    if (run->hypercall.nr == KVM_HC_DMA_MAP) {
++        fprintf(stderr, "[chengyan] KVM_HC_DMA_MAP: gpa = 0x%llx, size = %llu\n", run->hypercall.args[0], run->hypercall.args[1]);
++        return demand_dma(cpu, run, true);
++    }
++    if (run->hypercall.nr == KVM_HC_DMA_UNMAP) {
++        fprintf(stderr, "[chengyan] KVM_HC_DMA_UNMAP: gpa = 0x%llx, size = %llu\n", run->hypercall.args[0], run->hypercall.args[1]);
++        return demand_dma(cpu, run, false);
++    }
+     return -EINVAL;
+ }
+ 

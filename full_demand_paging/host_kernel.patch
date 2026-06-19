@@ -1,0 +1,51 @@
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index a8c89d021..278ee1363 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -86,6 +86,13 @@
+ #include <asm/sgx.h>
+ #include <clocksource/hyperv_timer.h>
+ 
++#ifndef KVM_HC_DMA_MAP
++#define KVM_HC_DMA_MAP 13
++#endif
++#ifndef KVM_HC_DMA_UNMAP
++#define KVM_HC_DMA_UNMAP 14
++#endif
++
+ #define CREATE_TRACE_POINTS
+ #include "trace.h"
+ 
+@@ -10148,6 +10155,19 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
+ 		vcpu->arch.complete_userspace_io = complete_hypercall_exit;
+ 		return 0;
+ 	}
++	case KVM_HC_DMA_MAP: 
++	case KVM_HC_DMA_UNMAP: {
++		u64 gpa = a0, size = a1;
++		vcpu->run->exit_reason        = KVM_EXIT_HYPERCALL;
++		vcpu->run->hypercall.nr       = nr;
++		vcpu->run->hypercall.args[0]  = gpa;
++		vcpu->run->hypercall.args[1]  = size;
++		vcpu->run->hypercall.flags    = 0;
++		if (op_64_bit)
++			vcpu->run->hypercall.flags |= KVM_EXIT_HYPERCALL_LONG_MODE;
++		vcpu->arch.complete_userspace_io = complete_hypercall_exit;
++		return 0;
++	}
+ 	default:
+ 		ret = -KVM_ENOSYS;
+ 		break;
+diff --git a/include/uapi/linux/kvm_para.h b/include/uapi/linux/kvm_para.h
+index 960c7e93d..84966b3a8 100644
+--- a/include/uapi/linux/kvm_para.h
++++ b/include/uapi/linux/kvm_para.h
+@@ -30,6 +30,8 @@
+ #define KVM_HC_SEND_IPI		10
+ #define KVM_HC_SCHED_YIELD		11
+ #define KVM_HC_MAP_GPA_RANGE		12
++#define KVM_HC_DMA_MAP 13
++#define KVM_HC_DMA_UNMAP 14
+ 
+ /*
+  * hypercalls use architecture specific
