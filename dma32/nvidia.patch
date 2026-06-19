@@ -1,0 +1,36 @@
+diff --git a/kernel-open/nvidia-uvm/uvm_kvmalloc.c b/kernel-open/nvidia-uvm/uvm_kvmalloc.c
+index 992be187..cc45ed85 100644
+--- a/kernel-open/nvidia-uvm/uvm_kvmalloc.c
++++ b/kernel-open/nvidia-uvm/uvm_kvmalloc.c
+@@ -259,14 +259,14 @@ static void *alloc_internal(size_t size, bool zero_memory)
+ 
+     if (size <= UVM_KMALLOC_THRESHOLD) {
+         if (zero_memory)
+-            return kzalloc(size, NV_UVM_GFP_FLAGS);
+-        return kmalloc(size, NV_UVM_GFP_FLAGS);
++            return kzalloc(size, NV_UVM_GFP_FLAGS | GFP_DMA32);
++        return kmalloc(size, NV_UVM_GFP_FLAGS | GFP_DMA32);
+     }
+ 
+     if (zero_memory)
+-        hdr = vzalloc(sizeof(*hdr) + size);
++        hdr = __vmalloc(sizeof(*hdr) + size, GFP_DMA32 | __GFP_ZERO);
+     else
+-        hdr = vmalloc(sizeof(*hdr) + size);
++        hdr = __vmalloc(sizeof(*hdr) + size, GFP_DMA32);
+ 
+     if (!hdr)
+         return NULL;
+diff --git a/kernel-open/nvidia/nv-vm.c b/kernel-open/nvidia/nv-vm.c
+index e3665474..70edb989 100644
+--- a/kernel-open/nvidia/nv-vm.c
++++ b/kernel-open/nvidia/nv-vm.c
+@@ -266,6 +266,8 @@ static unsigned int nv_compute_gfp_mask(
+         }
+     }
+ 
++    gfp_mask |= GFP_DMA32;
++
+     gfp_mask |= __GFP_RETRY_MAYFAIL;
+ 
+     if (at->flags.zeroed)

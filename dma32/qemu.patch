@@ -1,0 +1,22 @@
+diff --git a/hw/vfio/listener.c b/hw/vfio/listener.c
+index 2d7d3a46457..082f4db6ad5 100644
+--- a/hw/vfio/listener.c
++++ b/hw/vfio/listener.c
+@@ -607,9 +607,17 @@ void vfio_container_region_add(VFIOContainer *bcontainer,
+             return;
+         }
+     }
++    fprintf(stderr, "iova: 0x%lx, size: 0x%lx, end: 0x%lx\n", iova, int128_get64(llsize), end);
++    if (iova >= 100000000) {
++        fprintf(stderr, "skip upper 32-bit\n");
++        return;
++    }
++    fprintf(stderr, "not skip\n");
+ 
++    fprintf(stderr, "vfio-dma-start\n");
+     ret = vfio_container_dma_map(bcontainer, iova, int128_get64(llsize),
+                                  vaddr, section->readonly, section->mr);
++    fprintf(stderr, "vfio-dma-end\n");
+     if (ret) {
+         error_setg(&err, "vfio_container_dma_map(%p, 0x%"HWADDR_PRIx", "
+                    "0x%"HWADDR_PRIx", %p) = %d (%s)",
